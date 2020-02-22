@@ -12,9 +12,9 @@
 #include <errno.h>
 
 #define BUFFSIZE 20000
-#define CMD_LENGTH 1024
+#define CMD_LENGTH 10
 #define CMD_COUNT 1024
-#define SPACE " "
+#define SPACE " \n\t\r"
 typedef struct {
     int stdin, stdout, stderr;
     bool isWait;

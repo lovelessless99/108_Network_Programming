@@ -1,3 +1,0 @@
-break shell.c:100
-break shell.c:70
-

@@ -13,7 +13,7 @@ void readline(char** cmd)
                 int c = getchar();
                 if(c == '\n' || c == '\r')
                 {
-                        buffer[pos] = 0;
+                        buffer[pos] = '\0';
                         *cmd = strdup(buffer);
                         return;
                 }
@@ -64,19 +64,20 @@ void switch_command(char *cmd)
         else { handler(cmd); }
 }
 
-
 void handler(char *line)
 {
-        Command cmd;
+        
         char *tok;
         tok = strtok(line, SPACE);
 
         while(tok != NULL)
-        {
-                cmd.stdin  = 0;
-                cmd.stdout = 1;
-                cmd.stderr = 2;
-                cmd.isWait = false;
+        {       
+                Command cmd = {
+                        .stdin  = 0,
+                        .stdout = 1,
+                        .stderr = 2,
+                        .isWait = false
+                };
 
                 if(pipe_table[count][0] != 0)
                 {
@@ -86,17 +87,22 @@ void handler(char *line)
                 }
 
                 int argc = 0;
-                char argv[CMD_COUNT][CMD_LENGTH];
-                // memset(argv, 0, sizeof(char) * CMD_COUNT * CMD_LENGTH);
 
+                char **argv = malloc(sizeof(char*) * CMD_COUNT);
+                memset(argv, 0, sizeof(char*) * CMD_COUNT);
+
+                for(int i = 0 ; i < CMD_LENGTH; i++){ 
+                        argv[i] = (char*)malloc(sizeof(char) * CMD_LENGTH);
+                        memset(argv[i], 0, sizeof(char) * CMD_LENGTH);
+                }
+                
                 while(tok && tok[0] != '|' && tok[0] != '>')
                 {
                         strcpy(argv[argc++], tok);
                         tok = strtok(NULL, SPACE);
                 }
 
-                // char *ptr = argv;
-                // *(ptr+argc) = NULL;
+                argv[argc] = NULL; /* Must do ! For execvp null terminate string array*/
 
                 while (tok && (tok[0] == '|' || tok[0] == '>')) {
                        
@@ -143,7 +149,8 @@ void handler(char *line)
                                         close(cmd.stderr);
                                 }
 
-                                if( execlp(argv[0], argv) < 0 )
+
+                                if( execvp(argv[0], argv) < 0 )
                                 {
                                         fprintf(stderr, "execvp is not working!\n");
                                 }
@@ -164,9 +171,9 @@ void handler(char *line)
                                         
                                 if (cmd.isWait) { waitpid(pid, NULL, 0); }
                                         
-                                ++count;
-                                strtok(NULL, " ");
+                              
                 }
-
+                ++count;
+                strtok(NULL, " ");  
         }
 }

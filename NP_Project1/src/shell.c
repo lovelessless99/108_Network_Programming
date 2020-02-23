@@ -81,6 +81,7 @@ void handler(char *line)
 
                 if(pipe_table[count][0] != 0)
                 {
+                        printf("has pipe!\n");
                         cmd.stdin = pipe_table[count][0];
                         close(pipe_table[count][1]);
                         pipe_table[count][1] = 0;
@@ -88,6 +89,7 @@ void handler(char *line)
 
                 int argc = 0;
 
+                /* Initialize Command Array */
                 char **argv = malloc(sizeof(char*) * CMD_COUNT);
                 memset(argv, 0, sizeof(char*) * CMD_COUNT);
 
@@ -103,27 +105,33 @@ void handler(char *line)
                 }
 
                 argv[argc] = NULL; /* Must do ! For execvp null terminate string array*/
+                if(tok == NULL) { cmd.isWait = true; }
 
                 while (tok && (tok[0] == '|' || tok[0] == '>')) {
-                       
+                        int to; 
                         switch(tok[0]) {
                                 case '|':
-                                        tok = strtok(NULL, " ");
-                                        int to = atoi(tok);
-                                        if (pipe_table[count + to][1] == 0) { pipe(pipe_table[count + to]); }
+                                        if( strlen(tok) == 1 ) { to = 1; }
+                                        else { sscanf(tok, "|%d", &to); } 
+                                        if (pipe_table[count + to][1] == 0) { 
+                                                pipe(pipe_table[count + to]); 
+                                                printf("pipe[%d] is pipe!\n", count + to);
+                                        }
                                         cmd.stdout = pipe_table[count + to][1];
                                 break;
 
                                 case '>':
                                         cmd.isWait = true;
-                                        tok = strtok(NULL, " ");
+                                        tok = strtok(NULL, SPACE);
                                         if (strcmp(tok, ">&") == 0) { cmd.stderr = open(tok, O_RDWR); } // error output
                                         else { cmd.stdout = open(tok, O_RDWR); } // standard output
                                 break;
                         }
-                        strtok(NULL, " ");
+                        tok = strtok(NULL, SPACE);
+                        // printf("tok | = %s\n",tok);
                 }
 
+                // printf("tok outer = %s\n",tok);
                 pid_t pid;
                 switch (pid = fork()){
                         case -1:
@@ -170,10 +178,12 @@ void handler(char *line)
                                 if (cmd.stderr != 2) { close(cmd.stderr); }
                                         
                                 if (cmd.isWait) { waitpid(pid, NULL, 0); }
-                                        
-                              
+
+                                for(int i = 0 ; i < CMD_LENGTH; i++){ free(argv[i]); }
+                                free(argv);
+
                 }
                 ++count;
-                strtok(NULL, " ");  
+                // printf("tok outer = %s\n",tok);
         }
 }

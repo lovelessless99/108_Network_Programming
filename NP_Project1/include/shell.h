@@ -11,9 +11,10 @@
 #include <fcntl.h>
 #include <errno.h>
 
+#define PIPE_NUMBER 10000
 #define BUFFSIZE 20000
-#define CMD_LENGTH 10
 #define CMD_COUNT 1024
+#define CMD_LENGTH 10
 #define SPACE " \n\t\r"
 typedef struct {
     int stdin, stdout, stderr;

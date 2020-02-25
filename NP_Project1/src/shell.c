@@ -1,6 +1,6 @@
 #include "shell.h"
 
-int pipe_table[1024][2];
+int pipe_table[PIPE_NUMBER][2];
 int count;
 
 void readline(char** cmd)
@@ -81,7 +81,6 @@ void handler(char *line)
 
                 if(pipe_table[count][0] != 0)
                 {
-                        printf("has pipe!\n");
                         cmd.stdin = pipe_table[count][0];
                         close(pipe_table[count][1]);
                         pipe_table[count][1] = 0;
@@ -115,23 +114,26 @@ void handler(char *line)
                                         else { sscanf(tok, "|%d", &to); } 
                                         if (pipe_table[count + to][1] == 0) { 
                                                 pipe(pipe_table[count + to]); 
-                                                printf("pipe[%d] is pipe!\n", count + to);
                                         }
                                         cmd.stdout = pipe_table[count + to][1];
                                 break;
 
                                 case '>':
                                         cmd.isWait = true;
-                                        tok = strtok(NULL, SPACE);
-                                        if (strcmp(tok, ">&") == 0) { cmd.stderr = open(tok, O_RDWR); } // error output
-                                        else { cmd.stdout = open(tok, O_RDWR); } // standard output
+                                        if (strcmp(tok, ">&") == 0) {
+                                                tok = strtok(NULL, SPACE); 
+                                                cmd.stderr = open(tok, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+                                        } // error output
+                                        
+                                        else { 
+                                                tok = strtok(NULL, SPACE);
+                                                cmd.stdout = open(tok, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+                                        } // standard output
                                 break;
                         }
                         tok = strtok(NULL, SPACE);
-                        // printf("tok | = %s\n",tok);
                 }
 
-                // printf("tok outer = %s\n",tok);
                 pid_t pid;
                 switch (pid = fork()){
                         case -1:

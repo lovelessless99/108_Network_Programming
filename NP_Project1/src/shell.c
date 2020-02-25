@@ -97,7 +97,7 @@ void handler(char *line)
                         memset(argv[i], 0, sizeof(char) * CMD_LENGTH);
                 }
                 
-                while(tok && tok[0] != '|' && tok[0] != '>')
+                while(tok && tok[0] != '|' && tok[0] != '>' && tok[0] != '!')
                 {
                         strcpy(argv[argc++], tok);
                         tok = strtok(NULL, SPACE);
@@ -106,16 +106,25 @@ void handler(char *line)
                 argv[argc] = NULL; /* Must do ! For execvp null terminate string array*/
                 if(tok == NULL) { cmd.isWait = true; }
 
-                while (tok && (tok[0] == '|' || tok[0] == '>')) {
+                while (tok && (tok[0] == '|' || tok[0] == '>' || tok[0] == '!')) {
                         int to; 
                         switch(tok[0]) {
                                 case '|':
                                         if( strlen(tok) == 1 ) { to = 1; }
-                                        else { sscanf(tok, "|%d", &to); } 
+                                        else { sscanf(tok, "|%d", &to); }
                                         if (pipe_table[count + to][1] == 0) { 
                                                 pipe(pipe_table[count + to]); 
                                         }
                                         cmd.stdout = pipe_table[count + to][1];
+                                break;
+
+                                case '!':
+                                        if( strlen(tok) == 1 ) { to = 1; }
+                                        else { sscanf(tok, "!%d", &to); }
+                                        if (pipe_table[count + to][1] == 0) { 
+                                                pipe(pipe_table[count + to]); 
+                                        }
+                                        cmd.stderr = cmd.stdout = pipe_table[count + to][1];
                                 break;
 
                                 case '>':
@@ -159,10 +168,9 @@ void handler(char *line)
                                         close(cmd.stderr);
                                 }
 
-
                                 if( execvp(argv[0], argv) < 0 )
                                 {
-                                        fprintf(stderr, "execvp is not working!\n");
+                                        fprintf(stderr, "Unknown command: [%s].\n", argv[0]);
                                 }
                                 exit(EXIT_FAILURE);
 
@@ -173,11 +181,7 @@ void handler(char *line)
                                         cmd.stdout = 1;
                                 }
                                         
-                                // close file
-                                if (cmd.stdout != 1) { close(cmd.stdout); }
-                                        
-                                // close file
-                                if (cmd.stderr != 2) { close(cmd.stderr); }
+                                // close file 
                                         
                                 if (cmd.isWait) { waitpid(pid, NULL, 0); }
 
@@ -186,6 +190,5 @@ void handler(char *line)
 
                 }
                 ++count;
-                // printf("tok outer = %s\n",tok);
         }
 }

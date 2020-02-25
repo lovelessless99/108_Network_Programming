@@ -16,6 +16,7 @@
 #define CMD_COUNT 1024
 #define CMD_LENGTH 10
 #define SPACE " \n\t\r"
+#define PIPE_SYMBLE "|!>"
 typedef struct {
     int stdin, stdout, stderr;
     bool isWait;

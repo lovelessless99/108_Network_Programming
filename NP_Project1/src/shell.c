@@ -97,7 +97,7 @@ void handler(char *line)
                         memset(argv[i], 0, sizeof(char) * CMD_LENGTH);
                 }
                 
-                while(tok && tok[0] != '|' && tok[0] != '>' && tok[0] != '!')
+                while(tok && !strchr(PIPE_SYMBLE, tok[0]))
                 {
                         strcpy(argv[argc++], tok);
                         tok = strtok(NULL, SPACE);
@@ -106,7 +106,8 @@ void handler(char *line)
                 argv[argc] = NULL; /* Must do ! For execvp null terminate string array*/
                 if(tok == NULL) { cmd.isWait = true; }
 
-                while (tok && (tok[0] == '|' || tok[0] == '>' || tok[0] == '!')) {
+                while(tok && strchr(PIPE_SYMBLE, tok[0]))
+                {
                         int to; 
                         switch(tok[0]) {
                                 case '|':
@@ -124,7 +125,8 @@ void handler(char *line)
                                         if (pipe_table[count + to][1] == 0) { 
                                                 pipe(pipe_table[count + to]); 
                                         }
-                                        cmd.stderr = cmd.stdout = pipe_table[count + to][1];
+                                        cmd.stdout = cmd.stderr = pipe_table[count + to][1]; 
+                                        
                                 break;
 
                                 case '>':
@@ -150,23 +152,9 @@ void handler(char *line)
                                 break;
                         
                         case 0:
-                                if(cmd.stdin != 0)
-                                {
-                                        dup2(cmd.stdin, STDIN_FILENO);
-                                        close(cmd.stdin);
-                                }
-
-                                if (cmd.stdout != 1)
-                                {
-                                        dup2(cmd.stdout, STDOUT_FILENO);
-                                        close(cmd.stdout);
-                                }
-
-                                if (cmd.stderr != 2)
-                                {
-                                        dup2(cmd.stderr, STDERR_FILENO);
-                                        close(cmd.stderr);
-                                }
+                                if (cmd.stdin  != 0) { dup2(cmd.stdin , STDIN_FILENO) ; }
+                                if (cmd.stdout != 1) { dup2(cmd.stdout, STDOUT_FILENO); }
+                                if (cmd.stderr != 2) { dup2(cmd.stderr, STDERR_FILENO); }
 
                                 if( execvp(argv[0], argv) < 0 )
                                 {
@@ -178,9 +166,7 @@ void handler(char *line)
                                 if (pipe_table[count][0] != 0) {
                                         close(pipe_table[count][0]);
                                         pipe_table[count][0] = 0;
-                                        cmd.stdout = 1;
                                 }
-                                        
                                 // close file 
                                         
                                 if (cmd.isWait) { waitpid(pid, NULL, 0); }

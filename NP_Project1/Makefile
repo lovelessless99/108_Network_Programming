@@ -19,10 +19,11 @@ build: $(OBJS) $(EXEC)
 
 $(EXEC): $(OBJS)
 	$(CC) -o $@ $(OBJS)
+	cp $(EXEC) test/$(EXEC)
 
 $(OBJPATH)/%.o: $(SRCPATH)/%.c
 	$(CC) $(CFLAGS) $< -I $(INCLUDEPATH) -o $@
 
 clean:
 	rm -r $(OBJPATH)
-	rm $(EXEC)
+	rm $(EXEC) test/$(EXEC)

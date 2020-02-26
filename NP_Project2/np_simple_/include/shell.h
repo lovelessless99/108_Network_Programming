@@ -16,7 +16,12 @@
 #define CMD_COUNT 1024
 #define CMD_LENGTH 10
 #define SPACE " \n\t\r"
+#define ENTER "\n\r"
 #define PIPE_SYMBLE "|!>"
+
+#define REMOVE_ENTER_CHAR(cmd) \
+    for(int i = 0 ; i < strlen(cmd); i++) { if(strchr(ENTER, cmd[i])) { cmd[i] = '\0'; } } \
+
 typedef struct {
     int stdin, stdout, stderr;
     bool isWait;
@@ -24,8 +29,7 @@ typedef struct {
 
 
 void switch_command(char *cmd);
-void readline(char** cmd);
 void handler(char *cmdline);
-void launch(void);
+void launch(int client_fd);
 
 #endif

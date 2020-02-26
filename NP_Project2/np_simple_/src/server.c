@@ -1,9 +1,30 @@
 #include "server.h"
+#include "shell.h"
 
 void server(char *port)
-{
+{       
         int socket_fd = create_socket(port);
-        int client_fd = connect_client(socket_fd);
+        
+        while(true){
+                int client_fd = connect_client(socket_fd);
+                pid_t pid;
+                
+                switch((pid = fork()))
+		{
+			case -1:
+				fprintf(stderr, "fork error!\n");
+				close(client_fd);
+				break;
+			case 0:
+				close(socket_fd);
+				launch(client_fd);
+				close(client_fd);
+
+			default:
+				close(client_fd);
+				wait(NULL);
+		}
+        }
 }
 
 int create_socket(char *port)

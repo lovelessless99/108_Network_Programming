@@ -1,54 +1,45 @@
 #include "shell.h"
 
 int pipe_table[PIPE_NUMBER][2];
+int client_fd;
 int count;
 
-void readline(char** cmd)
+void launch(int clientfd)
 {
-        char buffer[BUFFSIZE] = {0};
-        int pos = 0;
-
-        while(true)
-        {
-                int c = getchar();
-                if(c == '\n' || c == '\r')
-                {
-                        buffer[pos] = '\0';
-                        *cmd = strdup(buffer);
-                        return;
-                }
-                else if (c == EOF) { return;}
-                else { buffer[pos++] = c; }
-        }
-}
-
-void launch(void)
-{
+        client_fd = clientfd;
         setenv("PATH", "bin:.", 1);
+        
         while(true)
         {
-                char *cmd;
-                printf("%% ");
-                readline(&cmd);
+                char cmd[BUFFSIZE] = {0};
+                write(client_fd, "% ", 2);
+                read(client_fd, cmd, BUFFSIZE);
+                REMOVE_ENTER_CHAR(cmd); // Remove the end of command \r\n from client 
                 if(!strcmp(cmd, "")) continue;
                 switch_command(cmd);
-                free(cmd);
         }
 }
 
 void switch_command(char *cmd)
 {
-        if(!strcmp(cmd, "exit")) { exit(EXIT_SUCCESS); }
+        
+        if(!strcmp(cmd, "exit")) {  exit(EXIT_SUCCESS); }
 
         else if(strstr(cmd, "printenv"))
         {
-                char *tok;
+                char *tok, message[BUFFSIZE] = {0};
                 tok = strtok(cmd , SPACE);
                 tok = strtok(NULL, SPACE);
                 if(tok){ 
-                        if (getenv(tok)){ printf("%s\n", getenv(tok)); }
+                        if (getenv(tok)){ 
+                                sprintf(message,"%s\n", getenv(tok));
+                                write(client_fd, message, strlen(message));
+                        }
                 }
-                else{ fprintf(stderr, "Please Input Envirnment Name!\n"); }
+                else{ 
+                        strcpy(message, "Please Input Envirnment Name!\n");
+                        write(client_fd, message, strlen(message));
+                }
         }
 
         else if(strstr(cmd, "setenv"))
@@ -74,8 +65,8 @@ void handler(char *line)
         {       
                 Command cmd = {
                         .stdin  = 0,
-                        .stdout = 1,
-                        .stderr = 2,
+                        .stdout = client_fd,
+                        .stderr = client_fd,
                         .isWait = false
                 };
 

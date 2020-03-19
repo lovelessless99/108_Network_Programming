@@ -1,31 +1,32 @@
+#include "client.h"
 #include "shell.h"
 
+client** user_list;
 int pipe_table[PIPE_NUMBER][2];
 int client_fd;
 int count;
 
-void launch(int clientfd)
+int launch(int clientfd, client** userlist)
 {
         client_fd = clientfd;
-        setenv("PATH", "bin:.", 1);
+        user_list = userlist;
+
+        setenv("PATH", "bin:.", 1); // To Do, change by info
         
-        while(true)
-        {
-                char cmd[BUFFSIZE] = {0};
-                write(client_fd, "% ", 2);
-                read(client_fd, cmd, BUFFSIZE);
-                REMOVE_ENTER_CHAR(cmd); // Remove the end of command \r\n from client 
-                if(!strcmp(cmd, "")) continue;
-                switch_command(cmd);
-        }
+        char cmd[BUFFSIZE] = {0};        
+        read(client_fd, cmd, BUFFSIZE);
+        REMOVE_ENTER_CHAR(cmd); // Remove the end of command \r\n from client 
+        
+        if(!strcmp(cmd, "exit")) return -1;
+        switch_command(cmd);
+        write(client_fd, "% ", 2);
+        return 1;
 }
 
 void switch_command(char *cmd)
 {
-        
-        if(!strcmp(cmd, "exit")) {  exit(EXIT_SUCCESS); }
 
-        else if(strstr(cmd, "printenv"))
+        if(strstr(cmd, "printenv"))
         {
                 char *tok, message[BUFFSIZE] = {0};
                 tok = strtok(cmd , SPACE);
@@ -52,8 +53,71 @@ void switch_command(char *cmd)
                 if(name && value) { setenv(name, value, 1); }
         }
 
+        else if(strstr(cmd, "who")) { who(); }
+
         else { handler(cmd); }
 }
+
+void who()
+{
+        char message[5000] = {0};
+        sprintf(message, "<ID>\t<nickname>\t<IP:port>\t<indicate me>\n");
+
+        for_each_client(*user_list)
+        {
+                char temp[500] = {0};
+                printf("fd = %d, client_fd = %d\n", ptr->fd, client_fd);
+                if (ptr->fd == client_fd) { sprintf(temp, "%d\t%s\t%s:%s\t<-me\n", ptr->id, ptr->name, ptr->ip, ptr->port); }            
+                else { sprintf(temp, "%d\t%s\t%s:%s\n", ptr->id, ptr->name, ptr->ip, ptr->port); }
+                strcat(message, temp);
+        }
+
+        write(client_fd, message, strlen(message));
+}
+
+void tell(char *message, int receiver_id)
+{
+        char buffer[BUFFSIZE] = {0};
+        client* sender   = search_client_by_fd(*user_list, client_fd  );
+        client* receiver = search_client_by_id(*user_list, receiver_id);
+
+        if (receiver != NULL)
+        {
+                sprintf(buffer, "*** %s told you ***: %s\n", sender->name, message);
+                write(receiver->fd, buffer, strlen(buffer));
+        }
+        else
+        {
+                sprintf(buffer, "*** Error: user #%d does not exist yet. ***\n", receiver_id);
+                write(receiver->fd, buffer, strlen(buffer));
+        }
+}
+
+
+void yell(char *message)
+{
+
+
+
+
+}
+void changeName(char* new_name)
+{
+        char temp[BUFFSIZE] = {0};
+        for_each_client(*user_list) {
+                if ((ptr->fd != client_fd) && (!strcmp(ptr->name, new_name)))
+                {
+                        sprintf(temp, "*** User '%s' already exists. ***\n", new_name);
+                        write(client_fd, temp, strlen(temp));
+                        return;                      
+                }
+        }
+
+        client* client_ptr = search_client_by_fd(*user_list, client_fd);
+        free(client_ptr->name);
+        client_ptr->name = strdup(new_name);
+}
+
 
 void handler(char *line)
 {

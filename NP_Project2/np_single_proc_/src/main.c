@@ -50,14 +50,57 @@ void test()
         print_each_client(user_list);
 
 }
+
+void test2()
+{
+        Tube* tube_list = NULL;
+
+        Tube* tube1 = create_tube(1, 2);
+        push_tube(&tube_list, &tube1);
+
+        Tube* tube2 = create_tube(1, 3);
+        push_tube(&tube_list, &tube2);
+
+        Tube* tube3 = create_tube(1, 4);
+        push_tube(&tube_list, &tube3);
+
+        Tube* tube4 = create_tube(1, 5);
+        push_tube(&tube_list, &tube4);
+
+        Tube* tube5 = create_tube(3, 2);
+        push_tube(&tube_list, &tube5);
+
+        Tube* tube6 = create_tube(2, 3);
+        push_tube(&tube_list, &tube6);
+
+        printf("Before Delete\n");
+        printList(tube_list);
+        delete_tube(&tube_list, 2);
+
+        printf("After Delete 2\n");
+        printList(tube_list);
+        delete_tube(&tube_list, 1);
+
+        printf("After Delete 1\n");
+        printList(tube_list);
+        delete_tube(&tube_list, 3);
+
+        printf("After Delete 3\n\n");
+        
+        printList(tube_list);
+}
+
+
+
 int main(int argc, char **argv)
 {
-        test();
-        // if(argc < 2){
-        //         fprintf(stderr, "usage: ./npserver <port>\n");
-        //         exit(EXIT_FAILURE);
-        // }
+        // test2();
+        // test();
+        if(argc < 2){
+                fprintf(stderr, "usage: ./npserver <port>\n");
+                exit(EXIT_FAILURE);
+        }
 
-        // server(argv[1]);
-        // return EXIT_SUCCESS;
+        server(argv[1]);
+        return EXIT_SUCCESS;
 }

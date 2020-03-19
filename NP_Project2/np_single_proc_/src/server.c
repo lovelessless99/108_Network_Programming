@@ -1,29 +1,49 @@
 #include "server.h"
+#include "client.h"
 #include "shell.h"
 
 void server(char *port)
 {       
         int socket_fd = create_socket(port);
+        int fdmax = socket_fd;
+        fd_set main_fdset, copy_fdset;
         
-        while(true){
-                int client_fd = connect_client(socket_fd);
-                pid_t pid;
-                
-                switch((pid = fork()))
-		{
-			case -1:
-				fprintf(stderr, "fork error!\n");
-				close(client_fd);
-				break;
-			case 0:
-				close(socket_fd);
-				launch(client_fd);
-				close(client_fd);
+        FD_ZERO(&main_fdset);
+        FD_ZERO(&copy_fdset);
+        FD_SET(socket_fd, &main_fdset);
 
-			default:
-				close(client_fd);
-				wait(NULL);
-		}
+        client* user_list = NULL;
+
+        while(true)
+        {
+                memcpy(&copy_fdset, &main_fdset, sizeof(main_fdset));
+                while (select(fdmax + 1, &copy_fdset, NULL, NULL, NULL) == -1);
+                for(int fd = 0; fd <= fdmax; fd++)
+                {
+                        if(FD_ISSET(fd, &copy_fdset))
+                        {
+                                if (fd == socket_fd)
+                                {
+                                        int client_fd = connect_client(&user_list, socket_fd ,port);
+                                        FD_SET(client_fd, &main_fdset);
+                                        if (client_fd > fdmax) { fdmax = client_fd; }
+                                        write(client_fd, WELCOME, strlen(WELCOME));
+                                        write(client_fd, "% ", 2);
+                                }
+                        
+                                else
+                                {
+                                        clearenv();
+                                        int status = launch(fd, &user_list);
+                                        if(status == -1)
+                                        {
+                                                FD_CLR(fd, &main_fdset);
+                                                delete_client(&user_list, fd);
+                                                close(fd);
+                                        }         
+                                }
+                        }
+                }
         }
 }
 
@@ -65,14 +85,13 @@ int create_socket(char *port)
                 return -1;
 }
 
-int connect_client(int socket_fd)
+int connect_client(client** user_list, int socket_fd, char* port)
 {
-        // client_addr_in -> client_addr
         struct sockaddr client_addr;
         socklen_t client_len = sizeof(client_addr);
         int clientfd  = accept(socket_fd , &client_addr , &client_len);
-        /*assign and create ip client node */
-        // printf("client ip address = %s\n", get_IP_String((struct sockaddr *)&client_addr));
+        client* new_user = create_client(clientfd, get_IP_String((struct sockaddr *)&client_addr), port);
+        insert_client(user_list, &new_user);
         return clientfd;
 }
 

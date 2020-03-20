@@ -25,7 +25,7 @@ typedef struct client {
 
 #define SEARCH_CLIENT(search_mode) \
         client* search_client_by_##search_mode (client* list, int search_mode) { \
-                for_each_client(list) { if(ptr->search_mode == search_mode) { return ptr;} } \
+                for_each_client(list) { if(ptr->search_mode == search_mode) { return &ptr;} } \
                 return NULL; \
         }\
 

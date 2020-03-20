@@ -24,13 +24,15 @@ int launch(int clientfd, client** userlist)
 }
 
 void switch_command(char *cmd)
-{
+{       
+        char copy_cmd[BUFFSIZE] = {0};
+        strcpy(copy_cmd, cmd);
 
-        if(strstr(cmd, "printenv"))
+        char *instruction = strtok(copy_cmd , SPACE);
+        if(!strcmp(instruction, "printenv"))
         {
-                char *tok, message[BUFFSIZE] = {0};
-                tok = strtok(cmd , SPACE);
-                tok = strtok(NULL, SPACE);
+                char message[BUFFSIZE] = {0}; 
+                char *tok = strtok(NULL, SPACE);
                 if(tok){ 
                         if (getenv(tok)){ 
                                 sprintf(message,"%s\n", getenv(tok));
@@ -42,18 +44,33 @@ void switch_command(char *cmd)
                         write(client_fd, message, strlen(message));
                 }
         }
-
-        else if(strstr(cmd, "setenv"))
+        
+        else if(!strcmp(instruction, "setenv"))
         {
-                char *tok, *name, *value;
-                tok   = strtok(cmd , SPACE);
+                char *name, *value;
+                // tok   = strtok(cmd , SPACE);
                 name  = strtok(NULL, SPACE);
                 value = strtok(NULL, SPACE);
 
                 if(name && value) { setenv(name, value, 1); }
         }
 
-        else if(strstr(cmd, "who")) { who(); }
+        else if(!strcmp(instruction, "who"))  { who(); }
+        else if(!strcmp(instruction, "tell")) { 
+                char *receiver_id,*temp, message[BUFFSIZE] = {0};
+                receiver_id  = strtok(NULL, SPACE);
+                temp = strtok(NULL, SPACE);
+
+                // concat the message
+                while(temp != NULL)
+                {
+                        temp = strcat(message, temp);
+                        temp = strcat(message, " ");
+                        temp = strtok(NULL, SPACE);
+                }
+                printf("Receiver id = %d, message = %s\n", atoi(receiver_id), message);
+                tell(message, atoi(receiver_id));
+        }
 
         else { handler(cmd); }
 }
@@ -66,7 +83,6 @@ void who()
         for_each_client(*user_list)
         {
                 char temp[500] = {0};
-                printf("fd = %d, client_fd = %d\n", ptr->fd, client_fd);
                 if (ptr->fd == client_fd) { sprintf(temp, "%d\t%s\t%s:%s\t<-me\n", ptr->id, ptr->name, ptr->ip, ptr->port); }            
                 else { sprintf(temp, "%d\t%s\t%s:%s\n", ptr->id, ptr->name, ptr->ip, ptr->port); }
                 strcat(message, temp);
@@ -78,9 +94,12 @@ void who()
 void tell(char *message, int receiver_id)
 {
         char buffer[BUFFSIZE] = {0};
-        client* sender   = search_client_by_fd(*user_list, client_fd  );
-        client* receiver = search_client_by_id(*user_list, receiver_id);
+        client *sender, *receiver;
 
+        // search
+        for(sender = *user_list; sender->fd != client_fd; sender = sender->next_client );
+        for(receiver = *user_list; receiver->id != receiver_id; receiver = receiver->next_client );
+        
         if (receiver != NULL)
         {
                 sprintf(buffer, "*** %s told you ***: %s\n", sender->name, message);
@@ -103,19 +122,19 @@ void yell(char *message)
 }
 void changeName(char* new_name)
 {
-        char temp[BUFFSIZE] = {0};
-        for_each_client(*user_list) {
-                if ((ptr->fd != client_fd) && (!strcmp(ptr->name, new_name)))
-                {
-                        sprintf(temp, "*** User '%s' already exists. ***\n", new_name);
-                        write(client_fd, temp, strlen(temp));
-                        return;                      
-                }
-        }
+        // char temp[BUFFSIZE] = {0};
+        // for_each_client(*user_list) {
+        //         if ((ptr->fd != client_fd) && (!strcmp(ptr->name, new_name)))
+        //         {
+        //                 sprintf(temp, "*** User '%s' already exists. ***\n", new_name);
+        //                 write(client_fd, temp, strlen(temp));
+        //                 return;                      
+        //         }
+        // }
 
-        client* client_ptr = search_client_by_fd(*user_list, client_fd);
-        free(client_ptr->name);
-        client_ptr->name = strdup(new_name);
+        // client* client_ptr = search_client_by_fd(*user_list, client_fd);
+        // free(client_ptr->name);
+        // client_ptr->name = strdup(new_name);
 }
 
 

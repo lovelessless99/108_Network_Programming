@@ -81,7 +81,3 @@ static int get_available_id(client *list)
         }
         return count;
 }
-
-SEARCH_CLIENT(fd)
-SEARCH_CLIENT(id)
-/*define in .c cuz prevent define repeatly*/

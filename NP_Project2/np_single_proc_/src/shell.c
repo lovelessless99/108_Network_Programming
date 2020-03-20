@@ -64,12 +64,43 @@ void switch_command(char *cmd)
                 // concat the message
                 while(temp != NULL)
                 {
-                        temp = strcat(message, temp);
-                        temp = strcat(message, " ");
+                        strcat(message, temp);
+                        strcat(message, " ");
                         temp = strtok(NULL, SPACE);
                 }
-                printf("Receiver id = %d, message = %s\n", atoi(receiver_id), message);
                 tell(message, atoi(receiver_id));
+        }
+
+        else if(!strcmp(instruction, "yell")) { 
+                char *temp, message[BUFFSIZE] = {0};
+                client *sender = NULL;
+                for(sender   = *user_list; sender   && sender->fd   != client_fd  ; sender   = sender->next_client   );
+                sprintf(message, "*** %s yelled ***: ", sender->name);
+                
+                temp = strtok(NULL, SPACE);
+                // concat the message
+                while(temp != NULL)
+                {
+                        strcat(message, temp);
+                        temp = strtok(NULL, SPACE);
+                        if(temp) strcat(message, " ");
+                }
+                strcat(message, "\n");
+                for_each_client(*user_list) { write(ptr->fd, message, strlen(message)); }
+        }
+
+        else if(!strcmp(instruction, "name")) { 
+                char *temp, name[BUFFSIZE] = {0};
+                temp = strtok(NULL, SPACE);
+                
+                // concat the message
+                while(temp != NULL)
+                {
+                        strcat(name, temp);
+                        temp = strtok(NULL, SPACE);
+                        if(temp) strcat(name, " ");
+                }
+                changeName(name);
         }
 
         else { handler(cmd); }
@@ -97,8 +128,8 @@ void tell(char *message, int receiver_id)
         client *sender, *receiver;
 
         // search
-        for(sender = *user_list; sender->fd != client_fd; sender = sender->next_client );
-        for(receiver = *user_list; receiver->id != receiver_id; receiver = receiver->next_client );
+        for(sender   = *user_list; sender   && sender->fd   != client_fd  ; sender   = sender->next_client   );
+        for(receiver = *user_list; receiver && receiver->id != receiver_id; receiver = receiver->next_client );
         
         if (receiver != NULL)
         {
@@ -108,33 +139,30 @@ void tell(char *message, int receiver_id)
         else
         {
                 sprintf(buffer, "*** Error: user #%d does not exist yet. ***\n", receiver_id);
-                write(receiver->fd, buffer, strlen(buffer));
+                write(client_fd, buffer, strlen(buffer));
         }
 }
 
-
-void yell(char *message)
-{
-
-
-
-
-}
 void changeName(char* new_name)
 {
-        // char temp[BUFFSIZE] = {0};
-        // for_each_client(*user_list) {
-        //         if ((ptr->fd != client_fd) && (!strcmp(ptr->name, new_name)))
-        //         {
-        //                 sprintf(temp, "*** User '%s' already exists. ***\n", new_name);
-        //                 write(client_fd, temp, strlen(temp));
-        //                 return;                      
-        //         }
-        // }
+        char message[BUFFSIZE] = {0};
+        for_each_client(*user_list)
+        {
+                if(!strcmp(ptr->name, new_name))
+                {
+                        sprintf(message, "*** User '%s' already exists. ***\n", new_name);
+                        write(client_fd, message, strlen(message));
+                        return;
+                }
+        }
 
-        // client* client_ptr = search_client_by_fd(*user_list, client_fd);
-        // free(client_ptr->name);
-        // client_ptr->name = strdup(new_name);
+        client* user = NULL;
+        for( user = *user_list; user && user->fd != client_fd ; user = user->next_client );
+        free(user->name);
+        user->name = strdup(new_name);
+
+        sprintf(message, "*** User from %s:%u is named '%s'. ***\n", user->ip, user->port, user->name);
+        for_each_client(*user_list) { write(ptr->fd, message, strlen(message)); }
 }
 
 

@@ -35,6 +35,5 @@ int launch(int client_fd, client** user_list);
 
 void who ();
 void tell(char *message, int receiver_id);
-void yell(char *message);
 void changeName(char* new_name);
 #endif

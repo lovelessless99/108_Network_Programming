@@ -16,8 +16,8 @@ typedef struct tube {
 
 Tube* create_tube(int sender, int receiver);
 void push_tube(Tube** list, Tube** new_Tube);
-void delete_tube(Tube** list, int sender);
-Tube* search_tube(Tube* list, int sender, int receiver);
+void delete_all_id_tube(Tube** list, int sender_id);
+void delete_id_tube(Tube** list, int sender_id, int receiver_id);
 void printList(Tube* list);
 
 #endif 

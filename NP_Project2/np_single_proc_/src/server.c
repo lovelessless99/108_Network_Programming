@@ -1,6 +1,7 @@
 #include "server.h"
 #include "client.h"
 #include "shell.h"
+#include "tube.h"
 
 void server(char *port)
 {       
@@ -13,7 +14,7 @@ void server(char *port)
         FD_SET(socket_fd, &main_fdset);
 
         client* user_list = NULL;
-
+        Tube*   tube_list = NULL;
         while(true)
         {
                 memcpy(&copy_fdset, &main_fdset, sizeof(main_fdset));
@@ -34,7 +35,7 @@ void server(char *port)
                                 else
                                 {
                                         clearenv();
-                                        int status = launch(fd, &user_list);
+                                        int status = launch(fd, &user_list, &tube_list);
                                         if(status == -1)
                                         {
                                                 FD_CLR(fd, &main_fdset);

@@ -75,15 +75,15 @@ void test2()
 
         printf("Before Delete\n");
         printList(tube_list);
-        delete_tube(&tube_list, 2);
+        delete_all_id_tube(&tube_list, 2);
 
         printf("After Delete 2\n");
         printList(tube_list);
-        delete_tube(&tube_list, 1);
+        delete_all_id_tube(&tube_list, 1);
 
         printf("After Delete 1\n");
         printList(tube_list);
-        delete_tube(&tube_list, 3);
+        delete_all_id_tube(&tube_list, 3);
 
         printf("After Delete 3\n\n");
         

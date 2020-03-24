@@ -1,15 +1,18 @@
 #include "client.h"
 #include "shell.h"
+#include "tube.h"
 
 client** user_list;
+Tube** tube_list;
 int pipe_table[PIPE_NUMBER][2];
 int client_fd;
 int count;
 
-int launch(int clientfd, client** userlist)
+int launch(int clientfd, client** userlist, Tube** tubelist)
 {
         client_fd = clientfd;
         user_list = userlist;
+        tube_list = tubelist;
 
         setenv("PATH", "bin:.", 1); // To Do, change by info
         
@@ -161,19 +164,27 @@ void changeName(char* new_name)
         free(user->name);
         user->name = strdup(new_name);
 
-        sprintf(message, "*** User from %s:%u is named '%s'. ***\n", user->ip, user->port, user->name);
+        sprintf(message, "*** User from %s:%s is named '%s'. ***\n", user->ip, user->port, user->name);
         for_each_client(*user_list) { write(ptr->fd, message, strlen(message)); }
 }
 
 
 void handler(char *line)
 {
+        bool receive_pipe, send_pipe = false;
+        int send_peer_id, receive_peer_id;
         
-        char *tok;
-        tok = strtok(line, SPACE);
+        client *me;
+        for( me = *user_list; me && me->fd != client_fd; me = me->next_client );
+
+        char copy_cmd[BUFFSIZE] = {0};
+        strcpy(copy_cmd, line);
+        char *tok; tok = strtok(copy_cmd, SPACE);
 
         while(tok != NULL)
         {       
+                char temp[100] = {0};
+
                 Command cmd = {
                         .stdin  = 0,
                         .stdout = client_fd,
@@ -210,7 +221,8 @@ void handler(char *line)
 
                 while(tok && strchr(PIPE_SYMBLE, tok[0]))
                 {
-                        int to; 
+                        int to;
+
                         switch(tok[0]) {
                                 case '|':
                                         if( strlen(tok) == 1 ) { to = 1; }
@@ -232,16 +244,77 @@ void handler(char *line)
                                 break;
 
                                 case '>':
+                                        // send pipe
+                                        if( strlen(tok) > 1 && strcmp(tok, ">&") != 0 )
+                                        {
+                                               
+                                                printList(*tube_list);
+                                                send_pipe = true;
+                                                sscanf(tok, ">%d", &send_peer_id);
+                                                client *receiver;
+                                                Tube* tube;
+                                                for(receiver = *user_list; receiver && receiver->id != send_peer_id; receiver = receiver->next_client );
+                                                for(tube = *tube_list; tube && ( tube->sender != me->id || tube->receiver != send_peer_id ) ; tube = tube->next_tube);
+
+                                                if (receiver == NULL) { 
+                                                        sprintf(temp, "*** Error: user #%d does not exist yet. ***\n", send_peer_id);
+                                                        write(client_fd, temp, strlen(temp));
+                                                        return; 
+
+                                                }
+                                                
+                                                if(tube != NULL) { 
+                                                        sprintf(temp, "*** Error: the pipe #%d->#%d already exists. ***\n", me->id, send_peer_id);
+                                                        write(client_fd, temp, strlen(temp));
+                                                        return; 
+                                                }
+                                                
+                                                // create tube and broadcast
+                                                tube = create_tube(me->id, send_peer_id);
+                                                push_tube(tube_list, &tube);
+                                                sprintf(temp, "*** %s (#%d) just piped '%s' to %s (#%d) ***\n", me->name, me->id, line, receiver->name, receiver->id);
+                                                cmd.stdout = tube->pipe_fd[1];
+                                                
+                                                for_each_client(*user_list) { write(ptr->fd, temp, strlen(temp)); }
+                                                printList(*tube_list);
+                                                break;     
+                                        }
+
                                         cmd.isWait = true;
-                                        if (strcmp(tok, ">&") == 0) {
-                                                tok = strtok(NULL, SPACE); 
-                                                cmd.stderr = open(tok, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
-                                        } // error output
+                                        tok = strtok(NULL, SPACE); 
+                                        int file_fd = open(tok, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+                                        if(!strcmp(tok, ">&")){ cmd.stderr = file_fd; }
+                                        else{ cmd.stdout = file_fd; }
                                         
-                                        else { 
-                                                tok = strtok(NULL, SPACE);
-                                                cmd.stdout = open(tok, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
-                                        } // standard output
+                                break;
+
+                                case '<':
+                                        // receive pipe
+                                        receive_pipe = true;
+                                        sscanf(tok, "<%d", &receive_peer_id);
+                                        client *sender;
+                                        Tube* tube;
+
+                                        for(sender = *user_list; sender && sender->id != receive_peer_id; sender = sender->next_client);
+                                        for(tube = *tube_list; tube && ( tube->sender != receive_peer_id || tube->receiver != me->id ) ; tube = tube->next_tube);
+                                        if (sender == NULL) {
+                                                sprintf(temp, "*** Error: user #%d does not exist yet. ***\n", receive_peer_id);
+                                                write(client_fd, temp, strlen(temp));
+                                                return;
+                                        }
+
+                                        if (tube == NULL){
+                                                sprintf(temp, "*** Error: the pipe #%d->#%d does not exist yet. ***\n", receive_peer_id, me->id);
+                                                write(client_fd, temp, strlen(temp));
+                                                return;
+                                        }
+
+                                        cmd.stdin = tube->pipe_fd[0];
+                                        sprintf(temp, "*** %s (#%d) just received from %s (#%d) by '%s' ***\n", me->name, me->id, sender->name, sender->id, line);
+                                        for_each_client(*user_list) { write(ptr->fd, temp, strlen(temp)); }
+                                        printList(*tube_list);
+
+
                                 break;
                         }
                         tok = strtok(NULL, SPACE);
@@ -270,9 +343,9 @@ void handler(char *line)
                                         pipe_table[count][0] = 0;
                                 }
                                 // close file 
-                                        
+                                
+                                if(receive_pipe == true) { delete_id_tube(tube_list, receive_peer_id, me->id);}
                                 if (cmd.isWait) { waitpid(pid, NULL, 0); }
-
                                 for(int i = 0 ; i < CMD_LENGTH; i++){ free(argv[i]); }
                                 free(argv);
 

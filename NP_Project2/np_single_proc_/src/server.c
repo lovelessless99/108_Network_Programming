@@ -25,7 +25,7 @@ void server(char *port)
                         {
                                 if (fd == socket_fd)
                                 {
-                                        int client_fd = connect_client(&user_list, socket_fd ,port);
+                                        int client_fd = connect_client(&user_list, socket_fd);
                                         FD_SET(client_fd, &main_fdset);
                                         if (client_fd > fdmax) { fdmax = client_fd; }
                                         write(client_fd, WELCOME, strlen(WELCOME));
@@ -39,8 +39,7 @@ void server(char *port)
                                         if(status == -1)
                                         {
                                                 FD_CLR(fd, &main_fdset);
-                                                delete_client(&user_list, fd);
-                                                close(fd);
+                                                free_resource(&user_list, &tube_list, fd);
                                         }         
                                 }
                         }
@@ -86,15 +85,34 @@ int create_socket(char *port)
                 return -1;
 }
 
-int connect_client(client** user_list, int socket_fd, char* port)
+int connect_client(client** user_list, int socket_fd)
 {
         struct sockaddr client_addr;
         socklen_t client_len = sizeof(client_addr);
         int clientfd  = accept(socket_fd , &client_addr , &client_len);
+
+        char port[10] = {0};
+        sprintf(port, "%u", (uint16_t)ntohs( ((struct sockaddr_in*)(&client_addr))->sin_port));
         client* new_user = create_client(clientfd, get_IP_String((struct sockaddr *)&client_addr), port);
+        char message[100] = {0};
+        sprintf(message, "*** User '%s' entered from %s:%s. ***\n", new_user->name, new_user->ip, new_user->port);
+        for_each_client(*user_list){ write(ptr->fd, message, strlen(message)); }
         insert_client(user_list, &new_user);
         return clientfd;
 }
+
+void free_resource(client** user_list, Tube** tube_list ,int fd)
+{
+        client* remove_client;
+        for(remove_client = *user_list; remove_client->fd != fd; remove_client = remove_client->next_client);
+        char message[100] = {0};
+        sprintf(message, "*** User '%s' left. ***\n", remove_client->name);       
+        delete_client(user_list, fd);
+        delete_all_id_tube(tube_list, fd);
+        close(fd);
+        for_each_client(*user_list) { write(ptr->fd, message, strlen(message)); }
+}
+
 
 char* get_IP_String(const struct sockaddr *sa)
 {

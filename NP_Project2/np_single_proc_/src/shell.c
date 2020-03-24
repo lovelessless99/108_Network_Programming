@@ -13,8 +13,11 @@ int launch(int clientfd, client** userlist, Tube** tubelist)
         client_fd = clientfd;
         user_list = userlist;
         tube_list = tubelist;
+        
+        client *me;
+        for( me = *user_list; me && me->fd != client_fd; me = me->next_client );
 
-        setenv("PATH", "bin:.", 1); // To Do, change by info
+        setenv("PATH", me->env_path, 1); // To Do, change by info
         
         char cmd[BUFFSIZE] = {0};        
         read(client_fd, cmd, BUFFSIZE);
@@ -55,7 +58,13 @@ void switch_command(char *cmd)
                 name  = strtok(NULL, SPACE);
                 value = strtok(NULL, SPACE);
 
-                if(name && value) { setenv(name, value, 1); }
+                if(name && value) { 
+                        setenv(name, value, 1);
+                        client *me;
+                        for( me = *user_list; me && me->fd != client_fd; me = me->next_client );
+                        free(me->env_path);
+                        me->env_path = strdup(value);
+                }
         }
 
         else if(!strcmp(instruction, "who"))  { who(); }

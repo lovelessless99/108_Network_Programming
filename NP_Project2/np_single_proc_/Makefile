@@ -1,7 +1,7 @@
 INCLUDEPATH = include
 OBJPATH = obj
 SRCPATH = src
-EXECPATH = .
+EXECPATH = ..
 
 CC = gcc
 CFLAGS = -g -Wall -c

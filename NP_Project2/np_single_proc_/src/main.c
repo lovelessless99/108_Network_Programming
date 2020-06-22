@@ -94,8 +94,7 @@ void test2()
 
 int main(int argc, char **argv)
 {
-        // test2();
-        // test();
+
         if(argc < 2){
                 fprintf(stderr, "usage: ./npserver <port>\n");
                 exit(EXIT_FAILURE);

@@ -1,12 +1,12 @@
 #include "client.h"
 
 
-client* create_client(int fd, char *ip, char *port)
+client* create_client(int pid, char *ip, char *port)
 {
         client* new_client = malloc(sizeof(client));
         new_client -> env_path = strdup("bin:.");
         new_client -> name = strdup("(no name)");
-        new_client -> fd = fd;
+        new_client -> pid = pid;
         new_client -> ip = strdup(ip);
         new_client -> port = strdup(port);
         return new_client;
@@ -34,13 +34,13 @@ void insert_client(client** list, client** new_client)
         ptr->next_client = *new_client;
 }
 
-void delete_client(client** list, int fd)
+void delete_client(client** list, int pid)
 {
         int count = 1;
         client* pre_client = NULL;
         for_each_client(*list)
         {      
-                if(ptr->fd == fd)
+                if(ptr->pid == pid)
                 {
                         if(count == 1)
                         {

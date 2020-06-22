@@ -17,7 +17,10 @@ typedef struct tube Tube;
 void server(char *port);
 int create_socket (char *port);
 int connect_client(client** user_list, int socket_fd);
-void free_resource(client** user_list, Tube** tube_list,int fd);
+void free_resource(client** user_list, Tube** tube_list,int pid);
 char* get_IP_String(const struct sockaddr *sa);
 
+
+void clear_shmem_signal();
+void broadcast_signal();
 #endif

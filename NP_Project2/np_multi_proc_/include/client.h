@@ -9,6 +9,7 @@
 typedef struct client {
         int id;
         int fd;
+        pid_t pid;
         
         char *name;
         char *env_path;
@@ -21,7 +22,7 @@ typedef struct client {
 
 
 #define for_each_client(list) for(client* ptr = list ; ptr ; ptr = ptr->next_client)
-#define print_each_client(list) for_each_client(list) { printf("User %d: fd = %d, ip = %s, port = %s\n", ptr->id, ptr->fd, ptr->ip, ptr->port ); }
+#define print_each_client(list) for_each_client(list) { printf("User %d: pid = %d, ip = %s, port = %s\n", ptr->id, ptr->pid, ptr->ip, ptr->port ); }
 
 #define SEARCH_CLIENT(search_mode) \
         client* search_client_by_##search_mode (client* list, int search_mode) { \
@@ -30,9 +31,9 @@ typedef struct client {
         }\
 
 
-client* create_client(int fd, char *ip, char *port);
+client* create_client(int pid, char *ip, char *port);
 void insert_client(client** list, client** new_client);
-void delete_client(client** list, int fd);
+void delete_client(client** list, int pid);
 
 static int  get_available_id(client *list);
 static void free_client_memory(client **node);

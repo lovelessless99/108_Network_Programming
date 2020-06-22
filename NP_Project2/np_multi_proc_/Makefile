@@ -1,10 +1,10 @@
 INCLUDEPATH = include
 OBJPATH = obj
 SRCPATH = src
-EXECPATH = .
+EXECPATH = ..
 
 CC = gcc
-CFLAGS = -g -Wall -c
+CFLAGS = -g -Wall -c -D _GNU_SOURCE
 
 SRCS = $(wildcard $(SRCPATH)/*.c)
 OBJS = $(patsubst $(SRCPATH)/%.c, $(OBJPATH)/%.o, $(SRCS))
@@ -18,7 +18,7 @@ dir:
 build: $(OBJS) $(EXEC)
 
 $(EXEC): $(OBJS)
-	$(CC) -g -o $@ $(OBJS)
+	$(CC) -g -o $@ $(OBJS) -lrt
 
 $(OBJPATH)/%.o: src/%.c
 	$(CC) $(CFLAGS) $< -I $(INCLUDEPATH) -o $@

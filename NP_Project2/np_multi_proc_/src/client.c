@@ -1,83 +1,84 @@
 #include "client.h"
+#include "shamem.h"
 
-
-client* create_client(int pid, char *ip, char *port)
+void init_client(int clientfd, pid_t clientpid)
 {
-        client* new_client = malloc(sizeof(client));
-        new_client -> env_path = strdup("bin:.");
-        new_client -> name = strdup("(no name)");
-        new_client -> pid = pid;
-        new_client -> ip = strdup(ip);
-        new_client -> port = strdup(port);
-        return new_client;
+	struct sockaddr_in addr;
+	//struct sockaddr_storage addr;
+    memset(&addr, 0, sizeof(addr));
+
+    socklen_t len = sizeof(addr);
+    
+	if (getpeername(clientfd, (struct sockaddr *)&addr, &len) < 0)
+	{
+		perror("getpeername");
+	}
+
+	int client_idx = get_available_client();	
+	memset(&client_info[client_idx], 0, sizeof(client_info[client_idx]));
+	
+	client_info[client_idx].commandTable = NULL;
+		
+	sprintf(client_info[client_idx].name, "%s", "(no name)");
+	sprintf(client_info[client_idx].path, "%s", "bin:.");
+
+    inet_ntop(addr.sin_family, &(addr.sin_addr), client_info[client_idx].ip_address, INET_ADDRSTRLEN);
+	
+    client_info[client_idx].client_fd = clientfd;
+	client_info[client_idx].cnt_line = 0;
+	client_info[client_idx].enable = 1;
+	client_info[client_idx].pid = clientpid;
+	client_info[client_idx].id = client_idx;
+	client_info[client_idx].port = (uint16_t)ntohs(addr.sin_port);
+	
 }
 
-void insert_client(client** list, client** new_client)
+int get_available_client()
 {
-        if(*list == NULL) {
-                (*new_client)->id = 1;
-                *list = *new_client;
-                return;
-        }
-
-        (*new_client)->id = get_available_id(*list);
-        client* ptr;
-
-        if( (*new_client)->id == 1) { 
-                (*new_client)->next_client = *list; 
-                *list  = *new_client;
-                return;
-        } 
-
-        for(ptr = *list ; ptr->next_client && ptr->id < (*new_client)->id ; ptr = ptr->next_client); 
-        (*new_client)->next_client = ptr->next_client;
-        ptr->next_client = *new_client;
+	for (int target = 1; target <= MAX_CLIENTS; ++target)
+	{
+		if (client_info[target].client_fd == 0)
+		{
+			return target;
+		}
+	}
+	return -1;
 }
 
-void delete_client(client** list, int pid)
+client *get_client(int clientfd)
 {
-        int count = 1;
-        client* pre_client = NULL;
-        for_each_client(*list)
-        {      
-                if(ptr->pid == pid)
-                {
-                        if(count == 1)
-                        {
-                                client* ptr_head = *list;
-                                *list = (*list)->next_client;
-                                free_client_memory(&ptr_head);
-                                return;
-                        }
-                        client *next = ptr->next_client;
-                        free_client_memory(&ptr);
-                        pre_client->next_client = next;
-                        return;
-                }
-                pre_client = ptr;
-                count++;
-        }
+	for (int i = 1; i <= MAX_CLIENTS; ++i)
+	{
+		if (client_info[i].client_fd == clientfd)
+		{
+			return &client_info[i];
+		}
+	}
+	return NULL;
 }
 
-
-static void free_client_memory(client **node)
+client *get_client_by_id(int target_id)
 {
-        free((*node)->env_path);
-        free((*node)->name);
-        free((*node)->ip);
-        free((*node)->port);
-        free(*node);
-        *node = NULL;
+	client *ptr = NULL;
+	for (int i = 1; i <= MAX_CLIENTS; ++i)
+	{
+		if (client_info[i].id == target_id)
+		{
+			ptr = &client_info[i];
+		}
+	}
+	return ptr;
 }
-static int get_available_id(client *list)
-{
 
-        int count = 1;
-        if(list->id != 1) return 1;
-        for_each_client(list)
-        {
-                if( ptr->next_client && ptr->next_client->id - 1 != ptr->id ) return (ptr->id + 1);
-                count++;
-        }
-        return count;
+client *get_client_by_pid(pid_t target_pid)
+{
+	client *ptr = NULL;
+	for (int i = 1; i <= MAX_CLIENTS; ++i)
+	{
+		if (client_info[i].pid == target_pid)
+		{
+			ptr = &client_info[i];
+		}
+	}
+	return ptr;
 }

@@ -1,360 +1,540 @@
-// #include "client.h"
-// #include "shell.h"
-// #include "tube.h"
+#include <sys/wait.h>
+#include <sys/stat.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <fcntl.h>
+#include <errno.h>
 
-// client** user_list;
-// Tube** tube_list;
-// int pipe_table[PIPE_NUMBER][2];
-// int client_fd;
-// int count;
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <sys/types.h>
+#include <arpa/inet.h>
+#include <resolv.h>
+#include <netdb.h>
 
-// int launch(int clientfd, client** userlist, Tube** tubelist)
-// {
-//         client_fd = clientfd;
-//         user_list = userlist;
-//         tube_list = tubelist;
+#include "CommandTable.h"
+#include "history.h"
+#include "socket.h"
+#include "global.h"
+#include "shell.h"
+#include "shamem.h"
+#include "client.h"
+
+int clientfd;
+pid_t clientpid;
+
+static void read_line(char**, int);
+static int launch(int, pid_t);
+static void printenv(char *);
+static void who(pid_t);
+
+
+static void tell(int, CommandTable *);
+static void yell(int, CommandTable *);
+static int checkName(pid_t pid, char* name);
+static void changeName(int clientfd, CommandTable *cmdTable);
+
+static void createFIFO(int from_id, int to_id);
+static char* getFIFONAME(int from_id, int to_id);
+
+static void execute(CommandTable *);
+static void execute_pipeline(CommandTable *);
+
+
+void init_shell(struct myShell** shell)
+{
+    (*shell) = malloc(sizeof(struct myShell));
+    (*shell)->launch = launch;
+    (*shell)->printenv = printenv;
+    (*shell)->execute = execute;
+    (*shell)->execute_pipeline = execute_pipeline;
+}
+
+
+/*
+    name: read_line
+    description: read user input
+*/
+static void read_line(char** buffer, int buffersize)
+{
+   int pos = 0;
+    while(pos < buffersize)
+    {
+        char c;
+        read(clientfd, &c, 1);
+        if(c == '\n' || c == '\r'){
+            (*buffer)[pos] = '\0';
+            return;
+        }
+
+        else if (c == EOF){ return;}
+        else{ (*buffer)[pos++] = c; }
+    }
+}
+
+/*
+    name: launch
+    description: launch a shell program and input command line
+*/
+static int launch(int client_fd, pid_t client_pid)
+{
+    
+    client* me = get_client_by_pid(client_pid);
+    setenv("PATH", me->path, 1);
+    clientfd = client_fd;
+    clientpid = client_pid;
+    
+    CommandTable *cmdTable = NULL;
+    init_CommandTable(&cmdTable, TOKEN_BUFFSIZE, CMD_PARAM, me->id, me->pid);
+    int buffersize = BUFFSIZE;
+
+    while(1){
+        char *line = malloc(sizeof(char) * buffersize);
+        bzero(line,buffersize); 
+        read_line(&line, buffersize);
+        if(line == NULL) break;
+        if(!strcmp(line, "")) continue; 
+        if(!strcmp(line, "exit")) return -1;
+        cmdTable->set_Command_Table(line, &cmdTable);
+        execute(cmdTable);
+        cmdTable->currentPosition = (cmdTable->currentPosition + cmdTable->numOfCommands);
+        free(line);
+        write(clientfd, "% ", 2);
+    }
+    return 1;
+}
+
+
+/*
+    name: printenv
+    description: print the envirnment variable
+*/
+static void printenv(char *argv)
+{
+  if(argv){
+      char *env = getenv(argv);
+      write(clientfd, env, strlen(env));
+      write(clientfd, "\n", 1);
+  }
+  else{
+      dup2(clientfd, STDERR_FILENO);
+      fprintf(stderr, "Please Input Envirnment Name!\n");
+  }
+} 
+
+
+static void who(pid_t pid)
+{
+    
+	memset(share_message, 0, sizeof(share_message));
+
+    sprintf(share_message, "<ID>\t<nickname>\t<IP:port>\t<indicate me>\n");
+    
+    for (int i = 1; i <= MAX_CLIENTS; ++i)
+    {
+		if (client_info[i].enable)
+		{
+            char temp[500] = {0};
+			            
+            if (client_info[i].pid == pid) {
+                sprintf(temp, "%d\t%s\t%s:%u\t<-me\n", client_info[i].id, client_info[i].name, client_info[i].ip_address, (unsigned int) client_info[i].port);
+            }            
+            else { 
+                sprintf(temp, "%d\t%s\t%s:%u\n", client_info[i].id, client_info[i].name, client_info[i].ip_address, (unsigned int) client_info[i].port);
+            }
+
+            
+            
+            strncat(share_message, temp, strlen(temp));
+        }
+    }
+	kill(pid, SIGUSR1);
+}
+
+
+static void tell(int clientfd, CommandTable *cmdTable)
+{
+    #define Command(N) cmdTable->cmdTable[cmdTable->currentPosition][N]
+    
+    int from_fd = clientfd;
+    int to_id = atoi(strdup(Command(1)));
+    char tell_message[5000] = {0};
+    for(int i = 2; Command(i); i++)
+    {
+        strcat(tell_message, Command(i));
+        strcat(tell_message, " ");
+    }
+    
+
+    int found = 0;
+    char buffer[50] = {0};
+
+    client *sender = get_client_by_id(cmdTable->self_id);
+    client *rec    = get_client_by_id(to_id);
+
+    if (rec != NULL && rec->enable > 0)
+    {
+        found = 1;
+    }
+
+    if (found)
+    {
+        memset(share_message, 0, sizeof(char) * BUFFSIZE);
+        sprintf(share_message, "*** %s told you ***: %s\n", sender->name, tell_message);
+        kill(rec->pid, SIGUSR1);
+		usleep(500);
+    } 
+    else
+    {
+        sprintf(buffer, "*** Error: user #%d does not exist yet. ***\n", to_id);
+        send(from_fd, buffer, strlen(buffer), 0);
+    }
+
+
+}
+
+
+static void yell(int clientfd, CommandTable *cmdTable)
+{
+    #define Command(N) cmdTable->cmdTable[cmdTable->currentPosition][N]
+
+    char yell_message[5000] = {0};
+    for(int i = 1; cmdTable->cmdTable[cmdTable->currentPosition][i] ; i++)
+    {
+        strcat(yell_message, cmdTable->cmdTable[cmdTable->currentPosition][i]);
+        if(cmdTable->cmdTable[cmdTable->currentPosition][i+1]) 
+            strcat(yell_message, " ");
+    }
+
+    if(cmdTable->hasRedirection)
+    {
+         strcat(yell_message, " > ");
+         strcat(yell_message,  cmdTable->cmdTable[cmdTable->currentPosition + 1][0]);
+    }
+
+    broadcast(cmdTable->pid, YELL, yell_message, -1, -1);
+}
+
+
+static int checkName(pid_t pid, char* name)
+{   
+    for (int i = 1; i <= MAX_CLIENTS; ++i)
+    {
+        if ((client_info[i].pid != pid) && (!strcmp(client_info[i].name, name)))
+        {
+            return -1;
+        }
+    }
+    return 1;
+}
+
+static void changeName(int clientfd, CommandTable *cmdTable)
+{
+    #define Command(N) cmdTable->cmdTable[cmdTable->currentPosition][N]
+    char *new_name;
+    new_name =  strdup(Command(1));
+    
+    //client *client_ptr = get_client(clientfd);
+    client *client_ptr = get_client_by_pid(cmdTable->pid);
+
+    if (checkName(client_ptr->pid, new_name) > 0)
+    {
+        memset(client_ptr->name, 0, sizeof(client_ptr->name));
+        strncpy(client_ptr->name, new_name, strlen(new_name));
+        broadcast(cmdTable->pid, CHANGENAME, new_name, -1, -1);
+    }
+    else
+    {
+        char temp[BUFFSIZE] = {0};
+        sprintf(temp, "*** User '%s' already exists. ***\n", new_name);
+        send(clientfd, temp, strlen(temp), 0);
+    }
+}
+
+
+
+
+
+/*
+    name: execute
+    description: execute the corrspond command based on command style and length
+*/
+static void execute(CommandTable *cmdTable)
+{
+    #define Command(N) cmdTable->cmdTable[cmdTable->currentPosition][N]
+
+    if(!strcmp(Command(0), "setenv"))
+    {
+        setenv(Command(1), Command(2), 1);
+    }
+    
+    else if(!strcmp(Command(0), "printenv"))
+    {
+        printenv(Command(1));
+    } 
+
+    else if(!strcmp(Command(0), "who"))
+    {
+        who(cmdTable->pid);
+    }
+
+    else if(!strcmp(Command(0), "tell"))
+    {
+        tell(clientfd, cmdTable);
+    }
+
+    else if(!strcmp(Command(0), "yell"))
+    {
+        yell(clientfd, cmdTable);
+    }
+
+    else if(!strcmp(Command(0), "name"))
+    {
+        changeName(clientfd, cmdTable);
+    }
+
+    else
+    {
+         if(cmdTable->hasReceive)
+        {
+            char temp[100] = {0}; 
+            if (get_client_by_id(cmdTable->from_id) == NULL)
+            {
+                sprintf(temp, "*** Error: user #%d does not exist yet. ***\n", cmdTable->from_id);
+                send(clientfd, temp, strlen(temp), 0);
+                return ;
+            }
+            
+            else if (user_pipe[cmdTable->from_id][cmdTable->self_id][0] == 0)
+            {
+                sprintf(temp, "*** Error: the pipe #%d->#%d does not exist yet. ***\n", cmdTable->from_id, cmdTable->self_id);
+                send(clientfd, temp, strlen(temp), 0);
+                return;
+            }
+            
+            else
+            {
+                broadcast(clientpid, RECEIVEPIPE, cmdTable->line, cmdTable->from_id, cmdTable->self_id);
+            }
+
+        }
+
+        if(cmdTable->hasSender)
+        {
+            if(cmdTable->hasReceive)
+                usleep(1000);
+
+            char temp[100] = {0}; 
+            if (get_client_by_id(cmdTable->to_id) == NULL)
+            {
+                sprintf(temp, "*** Error: user #%d does not exist yet. ***\n", cmdTable->to_id);
+                send(clientfd, temp, strlen(temp), 0);
+                return;
+            }
+            
+            
+            else if (user_pipe[cmdTable->self_id][cmdTable->to_id][0] == 1)
+            {
+                sprintf(temp, "*** Error: the pipe #%d->#%d already exists. ***\n", cmdTable->self_id, cmdTable->to_id);
+                send(clientfd, temp, strlen(temp), 0);
+                return;
+            }
+
+            else
+            {
+                broadcast(clientpid, SENDPIPE, cmdTable->line, -1, cmdTable->to_id);
+            }
+
+
+        }
+
+        execute_pipeline(cmdTable);
+    }
+
+}
+
+static char* getFIFONAME(int from_id, int to_id)
+{
+    const char *directory = "./user_pipe/userpipe";
+    // const char *directory = "userpipe";
+    char from[10] = {0};
+    char to[10] = {0};
+
+    sprintf(from, "%d", from_id);
+    sprintf(to  , "%d", to_id);
+    
+    char *str = NULL;     
+    append(&str, directory, strlen(directory));
+    append(&str, from, strlen(from));
+    append(&str, to  , strlen(to));
+    return str;
+}
+
+static void createFIFO(int from_id, int to_id)
+{
+	//const char* directory_name = "./user_pipe";
+    /*
+     * if(mkdir(directory_name, 0777) == -1)
+        fprintf(stderr, "directory: %s exist!\n", directory_name);
+    */
+
+    const char *directory = "./user_pipe/userpipe";
+    
+    
+    char from[10] = {0};
+    sprintf(from, "%d", from_id);
+      
+    char *str = NULL;     
+    char to[10] = {0};
+    append(&str, directory, strlen(directory));
+    sprintf(to  , "%d", to_id);
+    append(&str, from, strlen(from));
+    append(&str, to  , strlen(to));
+              
+    mkfifo(str,  0666) ;    
+
+    free(str);
+}
+
+
+
+
+/*
+    name: execute_pipeline
+    description: execute the commands
+*/
+
+static void execute_pipeline(CommandTable *cmd_table)
+{
+    int numOfCommands = (cmd_table->hasRedirection)? cmd_table->numOfCommands-1 : cmd_table->numOfCommands;
+     
+    pid_t pid;
+
+    char *sendFIFO = NULL, *receiveFIFO = NULL;
+    for(int i = 0 ; i < numOfCommands; i++)
+    {
+       
         
-//         client *me;
-//         for( me = *user_list; me && me->fd != client_fd; me = me->next_client );
+        int cur  = (cmd_table->currentPosition + i );
+        int next = (cur +  cmd_table->pipeN[cur] );
+    
+        int in = STDIN_FILENO;
+        int out = clientfd;
+    
+        dup2(clientfd, STDERR_FILENO);
 
-//         setenv("PATH", me->env_path, 1); // To Do, change by info
+        if(cmd_table->pipetable[cur][0] != STDIN_FILENO){
+            in = cmd_table->pipetable[cur][0];
+            close(cmd_table->pipetable[cur][1]);
+        }
         
-//         char cmd[BUFFSIZE] = {0};        
-//         read(client_fd, cmd, BUFFSIZE);
-//         REMOVE_ENTER_CHAR(cmd); // Remove the end of command \r\n from client 
         
-//         if(!strcmp(cmd, "exit")) return -1;
-//         switch_command(cmd);
-//         write(client_fd, "% ", 2);
-//         return 1;
-// }
-
-// void switch_command(char *cmd)
-// {       
-//         char copy_cmd[BUFFSIZE] = {0};
-//         strcpy(copy_cmd, cmd);
-
-//         char *instruction = strtok(copy_cmd , SPACE);
-//         if(!strcmp(instruction, "printenv"))
-//         {
-//                 char message[BUFFSIZE] = {0}; 
-//                 char *tok = strtok(NULL, SPACE);
-//                 if(tok){ 
-//                         if (getenv(tok)){ 
-//                                 sprintf(message,"%s\n", getenv(tok));
-//                                 write(client_fd, message, strlen(message));
-//                         }
-//                 }
-//                 else{ 
-//                         strcpy(message, "Please Input Envirnment Name!\n");
-//                         write(client_fd, message, strlen(message));
-//                 }
-//         }
+        else if (user_pipe[cmd_table->from_id][cmd_table->self_id][0])
+        {
+            user_pipe[cmd_table->from_id][cmd_table->self_id][0] = 0;
+        }
         
-//         else if(!strcmp(instruction, "setenv"))
-//         {
-//                 char *name, *value;
-//                 // tok   = strtok(cmd , SPACE);
-//                 name  = strtok(NULL, SPACE);
-//                 value = strtok(NULL, SPACE);
+        
+        
+        if(cmd_table->pipeN[cur] > 0){
+            if(cmd_table->pipetable[next][1] == STDOUT_FILENO){ pipe(cmd_table->pipetable[next]);}
+            out = cmd_table->pipetable[next][1];
+        }
+        
+        
+        else if(i+1 == numOfCommands && cmd_table->hasSender)
+        {
+            if(cmd_table->hasSender)
+                createFIFO(cmd_table->self_id, cmd_table->to_id);
+            user_pipe[cmd_table->self_id][cmd_table->to_id][0] = 1;
+        }
+        
+        
 
-//                 if(name && value) { 
-//                         setenv(name, value, 1);
-//                         client *me;
-//                         for( me = *user_list; me && me->fd != client_fd; me = me->next_client );
-//                         free(me->env_path);
-//                         me->env_path = strdup(value);
-//                 }
-//         }
+        while((pid=fork()) < 0)
+        {
+            //while(waitpid(pid, NULL,WNOHANG) != -1);
+            while(waitpid(-1, NULL, WNOHANG) > 0);
+        }
+        
+        if(pid == 0){ 
+            
+            dup2(clientfd, STDERR_FILENO);
 
-//         else if(!strcmp(instruction, "who"))  { who(); }
-//         else if(!strcmp(instruction, "tell")) { 
-//                 char *receiver_id,*temp, message[BUFFSIZE] = {0};
-//                 receiver_id  = strtok(NULL, SPACE);
-//                 temp = strtok(NULL, SPACE);
+            
+            
+            if(i == 0 && cmd_table->hasReceive)
+            {
+                receiveFIFO = getFIFONAME(cmd_table->from_id, cmd_table->self_id);
+                in = open(receiveFIFO, O_RDONLY);
+            }
 
-//                 // concat the message
-//                 while(temp != NULL)
-//                 {
-//                         strcat(message, temp);
-//                         strcat(message, " ");
-//                         temp = strtok(NULL, SPACE);
-//                 }
-//                 tell(message, atoi(receiver_id));
-//         }
+        
+        
+            if(i+1 == numOfCommands && cmd_table->hasSender)
+            {
+                sendFIFO = getFIFONAME(cmd_table->self_id, cmd_table->to_id);
+                out = open(sendFIFO, O_WRONLY); 
+            }
+            
 
-//         else if(!strcmp(instruction, "yell")) { 
-//                 char *temp, message[BUFFSIZE] = {0};
-//                 client *sender = NULL;
-//                 for(sender   = *user_list; sender   && sender->fd   != client_fd  ; sender   = sender->next_client   );
-//                 sprintf(message, "*** %s yelled ***: ", sender->name);
+            if(in != STDIN_FILENO){
+                dup2(in, STDIN_FILENO);
+                close(in);
+            }
+
+            if(out != STDOUT_FILENO){ 
+                dup2(out, STDOUT_FILENO);
+                if(cmd_table->stderrTable[cur])
+                    dup2(out, STDERR_FILENO);
+            }
+            
+            
+            if(cmd_table->hasRedirection){
+                if(i+1 == numOfCommands){
+                    char* filename = cmd_table->cmdTable[next][0];
+                    int mode = (cmd_table->hasAppendRediction)?  O_WRONLY | O_CREAT | O_APPEND : O_WRONLY | O_CREAT | O_TRUNC;
+                    int permission = S_IRUSR | S_IWUSR;
+                    int fd = open(filename, mode, permission);
+                    dup2(fd, STDOUT_FILENO);
+                    close(fd);
+                }
+            }
+            
+            if(execvp(cmd_table->cmdTable[cur][0], cmd_table->cmdTable[cur]) < 0 ){
+                dup2(clientfd, STDERR_FILENO);
+                fprintf(stderr, "Unknown command: [%s].\n", cmd_table->cmdTable[cur][0]); 
+            }
+            exit(EXIT_FAILURE);
+        }
+
+        else{
+            if(in != STDIN_FILENO){ close(in);}
+            
+            if(!cmd_table->hasSender){ 
+                if(out != clientfd){ 
+                    int finish_pre = 1;
+                    for(int k = 0 ; k <= cur && finish_pre; k++){
+                        if(cmd_table->pipeN[k])
+                           finish_pre = 0;
+                    }
                 
-//                 temp = strtok(NULL, SPACE);
-//                 // concat the message
-//                 while(temp != NULL)
-//                 {
-//                         strcat(message, temp);
-//                         temp = strtok(NULL, SPACE);
-//                         if(temp) strcat(message, " ");
-//                 }
-//                 strcat(message, "\n");
-//                 for_each_client(*user_list) { write(ptr->fd, message, strlen(message)); }
-//         }
+                    if(finish_pre) close(out);
+                }
+            }
+        }
 
-//         else if(!strcmp(instruction, "name")) { 
-//                 char *temp, name[BUFFSIZE] = {0};
-//                 temp = strtok(NULL, SPACE);
-                
-//                 // concat the message
-//                 while(temp != NULL)
-//                 {
-//                         strcat(name, temp);
-//                         temp = strtok(NULL, SPACE);
-//                         if(temp) strcat(name, " ");
-//                 }
-//                 changeName(name);
-//         }
-
-//         else { handler(cmd); }
-// }
-
-// void who()
-// {
-//         char message[5000] = {0};
-//         sprintf(message, "<ID>\t<nickname>\t<IP:port>\t<indicate me>\n");
-
-//         for_each_client(*user_list)
-//         {
-//                 char temp[500] = {0};
-//                 if (ptr->fd == client_fd) { sprintf(temp, "%d\t%s\t%s:%s\t<-me\n", ptr->id, ptr->name, ptr->ip, ptr->port); }            
-//                 else { sprintf(temp, "%d\t%s\t%s:%s\n", ptr->id, ptr->name, ptr->ip, ptr->port); }
-//                 strcat(message, temp);
-//         }
-
-//         write(client_fd, message, strlen(message));
-// }
-
-// void tell(char *message, int receiver_id)
-// {
-//         char buffer[BUFFSIZE] = {0};
-//         client *sender, *receiver;
-
-//         // search
-//         for(sender   = *user_list; sender   && sender->fd   != client_fd  ; sender   = sender->next_client   );
-//         for(receiver = *user_list; receiver && receiver->id != receiver_id; receiver = receiver->next_client );
+        if(i+1 == numOfCommands && (cmd_table->pipeN[cur] == 0 || cmd_table->hasRedirection) && !cmd_table->hasSender)
+        {    
+            int status;
+            waitpid(pid, &status, 0);
+        }
         
-//         if (receiver != NULL)
-//         {
-//                 sprintf(buffer, "*** %s told you ***: %s\n", sender->name, message);
-//                 write(receiver->fd, buffer, strlen(buffer));
-//         }
-//         else
-//         {
-//                 sprintf(buffer, "*** Error: user #%d does not exist yet. ***\n", receiver_id);
-//                 write(client_fd, buffer, strlen(buffer));
-//         }
-// }
-
-// void changeName(char* new_name)
-// {
-//         char message[BUFFSIZE] = {0};
-//         for_each_client(*user_list)
-//         {
-//                 if(!strcmp(ptr->name, new_name))
-//                 {
-//                         sprintf(message, "*** User '%s' already exists. ***\n", new_name);
-//                         write(client_fd, message, strlen(message));
-//                         return;
-//                 }
-//         }
-
-//         client* user = NULL;
-//         for( user = *user_list; user && user->fd != client_fd ; user = user->next_client );
-//         free(user->name);
-//         user->name = strdup(new_name);
-
-//         sprintf(message, "*** User from %s:%s is named '%s'. ***\n", user->ip, user->port, user->name);
-//         for_each_client(*user_list) { write(ptr->fd, message, strlen(message)); }
-// }
-
-
-// void handler(char *line)
-// {
-//         bool receive_pipe, send_pipe = false;
-//         int send_peer_id, receive_peer_id;
+        cmd_table->pipeN[cur] = 0;
         
-//         client *me;
-//         for( me = *user_list; me && me->fd != client_fd; me = me->next_client );
+    }
+    
 
-//         char copy_cmd[BUFFSIZE] = {0};
-//         strcpy(copy_cmd, line);
-//         char *tok; tok = strtok(copy_cmd, SPACE);
-
-//         while(tok != NULL)
-//         {       
-//                 char temp[100] = {0};
-
-//                 Command cmd = {
-//                         .stdin  = 0,
-//                         .stdout = client_fd,
-//                         .stderr = client_fd,
-//                         .isWait = false
-//                 };
-
-//                 if(pipe_table[count][0] != 0)
-//                 {
-//                         cmd.stdin = pipe_table[count][0];
-//                         close(pipe_table[count][1]);
-//                         pipe_table[count][1] = 0;
-//                 }
-
-//                 int argc = 0;
-
-//                 /* Initialize Command Array */
-//                 char **argv = malloc(sizeof(char*) * CMD_COUNT);
-//                 memset(argv, 0, sizeof(char*) * CMD_COUNT);
-
-//                 for(int i = 0 ; i < CMD_LENGTH; i++){ 
-//                         argv[i] = (char*)malloc(sizeof(char) * CMD_LENGTH);
-//                         memset(argv[i], 0, sizeof(char) * CMD_LENGTH);
-//                 }
-                
-//                 while(tok && !strchr(PIPE_SYMBLE, tok[0]))
-//                 {
-//                         strcpy(argv[argc++], tok);
-//                         tok = strtok(NULL, SPACE);
-//                 }
-
-//                 argv[argc] = NULL; /* Must do ! For execvp null terminate string array*/
-//                 if(tok == NULL) { cmd.isWait = true; }
-
-//                 while(tok && strchr(PIPE_SYMBLE, tok[0]))
-//                 {
-//                         int to;
-
-//                         switch(tok[0]) {
-//                                 case '|':
-//                                         if( strlen(tok) == 1 ) { to = 1; }
-//                                         else { sscanf(tok, "|%d", &to); }
-//                                         if (pipe_table[count + to][1] == 0) { 
-//                                                 pipe(pipe_table[count + to]); 
-//                                         }
-//                                         cmd.stdout = pipe_table[count + to][1];
-//                                 break;
-
-//                                 case '!':
-//                                         if( strlen(tok) == 1 ) { to = 1; }
-//                                         else { sscanf(tok, "!%d", &to); }
-//                                         if (pipe_table[count + to][1] == 0) { 
-//                                                 pipe(pipe_table[count + to]); 
-//                                         }
-//                                         cmd.stdout = cmd.stderr = pipe_table[count + to][1]; 
-                                        
-//                                 break;
-
-//                                 case '>':
-//                                         // send pipe
-//                                         if( strlen(tok) > 1 && strcmp(tok, ">&") != 0 )
-//                                         {
-//                                                 send_pipe = true;
-//                                                 sscanf(tok, ">%d", &send_peer_id);
-//                                                 client *receiver;
-//                                                 Tube* tube;
-//                                                 for(receiver = *user_list; receiver && receiver->id != send_peer_id; receiver = receiver->next_client );
-//                                                 for(tube = *tube_list; tube && ( tube->sender != me->id || tube->receiver != send_peer_id ) ; tube = tube->next_tube);
-
-//                                                 if (receiver == NULL) { 
-//                                                         sprintf(temp, "*** Error: user #%d does not exist yet. ***\n", send_peer_id);
-//                                                         write(client_fd, temp, strlen(temp));
-//                                                         return; 
-
-//                                                 }
-                                                
-//                                                 if(tube != NULL) { 
-//                                                         sprintf(temp, "*** Error: the pipe #%d->#%d already exists. ***\n", me->id, send_peer_id);
-//                                                         write(client_fd, temp, strlen(temp));
-//                                                         return; 
-//                                                 }
-                                                
-//                                                 // create tube and broadcast
-//                                                 tube = create_tube(me->id, send_peer_id);
-//                                                 push_tube(tube_list, &tube);
-//                                                 sprintf(temp, "*** %s (#%d) just piped '%s' to %s (#%d) ***\n", me->name, me->id, line, receiver->name, receiver->id);
-//                                                 cmd.stdout = tube->pipe_fd[1];
-                                                
-//                                                 for_each_client(*user_list) { write(ptr->fd, temp, strlen(temp)); }
-                                                
-//                                                 break;     
-//                                         }
-
-//                                         cmd.isWait = true;
-//                                         tok = strtok(NULL, SPACE); 
-//                                         int file_fd = open(tok, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
-//                                         if(!strcmp(tok, ">&")){ cmd.stderr = file_fd; }
-//                                         else{ cmd.stdout = file_fd; }
-                                        
-//                                 break;
-
-//                                 case '<':
-//                                         // receive pipe
-//                                         receive_pipe = true;
-//                                         sscanf(tok, "<%d", &receive_peer_id);
-//                                         client *sender;
-//                                         Tube* tube;
-
-//                                         for(sender = *user_list; sender && sender->id != receive_peer_id; sender = sender->next_client);
-//                                         for(tube = *tube_list; tube && ( tube->sender != receive_peer_id || tube->receiver != me->id ) ; tube = tube->next_tube);
-//                                         if (sender == NULL) {
-//                                                 sprintf(temp, "*** Error: user #%d does not exist yet. ***\n", receive_peer_id);
-//                                                 write(client_fd, temp, strlen(temp));
-//                                                 return;
-//                                         }
-
-//                                         if (tube == NULL){
-//                                                 sprintf(temp, "*** Error: the pipe #%d->#%d does not exist yet. ***\n", receive_peer_id, me->id);
-//                                                 write(client_fd, temp, strlen(temp));
-//                                                 return;
-//                                         }
-
-//                                         cmd.stdin = tube->pipe_fd[0];
-//                                         sprintf(temp, "*** %s (#%d) just received from %s (#%d) by '%s' ***\n", me->name, me->id, sender->name, sender->id, line);
-//                                         for_each_client(*user_list) { write(ptr->fd, temp, strlen(temp)); }
-                                        
-//                                 break;
-//                         }
-//                         tok = strtok(NULL, SPACE);
-//                 }
-
-//                 pid_t pid;
-//                 switch (pid = fork()){
-//                         case -1:
-//                                 while(waitpid(-1, NULL, WNOHANG) > 0);
-//                                 break;
-                        
-//                         case 0:
-//                                 if (cmd.stdin  != 0) { dup2(cmd.stdin , STDIN_FILENO) ; }
-//                                 if (cmd.stdout != 1) { dup2(cmd.stdout, STDOUT_FILENO); }
-//                                 if (cmd.stderr != 2) { dup2(cmd.stderr, STDERR_FILENO); }
-
-//                                 if( execvp(argv[0], argv) < 0 )
-//                                 {
-//                                         fprintf(stderr, "Unknown command: [%s].\n", argv[0]);
-//                                 }
-//                                 exit(EXIT_FAILURE);
-
-//                         default:
-//                                 if (pipe_table[count][0] != 0) {
-//                                         close(pipe_table[count][0]);
-//                                         pipe_table[count][0] = 0;
-//                                 }
-//                                 // close file 
-                                
-//                                 if(receive_pipe == true) { delete_id_tube(tube_list, receive_peer_id, me->id);}
-//                                 if (cmd.isWait) { waitpid(pid, NULL, 0); }
-//                                 for(int i = 0 ; i < CMD_LENGTH; i++){ free(argv[i]); }
-//                                 free(argv);
-
-//                 }
-//                 ++count;
-//         }
-// }
+}

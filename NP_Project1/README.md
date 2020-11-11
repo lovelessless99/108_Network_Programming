@@ -10,3 +10,12 @@ make
 cd test
 sh demo.sh
 ```
+
+## Warning
+If progarm cannot execute the binary file, please use
+
+```bash
+cd bin
+chmod +x * 
+```
+to add the executable permission.
